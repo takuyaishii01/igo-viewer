@@ -9,3 +9,71 @@
   <p>ここに囲碁盤を表示します</p>
 </body>
 </html>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>囲碁ビューワー</title>
+  <style>
+    body { text-align: center; font-family: sans-serif; }
+    canvas {
+      border: 1px solid #000;
+      margin-top: 20px;
+      background-color: #f4d9ae;
+    }
+  </style>
+</head>
+<body>
+  <h1>19×19 囲碁盤</h1>
+  <canvas id="goban" width="600" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById('goban');
+    const ctx = canvas.getContext('2d');
+    const size = 19;
+    const cell = canvas.width / (size + 1);
+    const board = Array.from({ length: size }, () => Array(size).fill(0));
+    let turn = 1; // 1: 黒, 2: 白
+
+    // 碁盤を描画
+    function drawBoard() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let i = 1; i <= size; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cell, i * cell);
+        ctx.lineTo(size * cell, i * cell);
+        ctx.moveTo(i * cell, cell);
+        ctx.lineTo(i * cell, size * cell);
+        ctx.stroke();
+      }
+
+      // 石の描画
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          if (board[y][x] !== 0) {
+            ctx.beginPath();
+            ctx.arc((x + 1) * cell, (y + 1) * cell, cell / 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = board[y][x] === 1 ? 'black' : 'white';
+            ctx.fill();
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    // クリックで石を置く
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.round((e.clientX - rect.left) / cell - 1);
+      const y = Math.round((e.clientY - rect.top) / cell - 1);
+      if (x >= 0 && y >= 0 && x < size && y < size && board[y][x] === 0) {
+        board[y][x] = turn;
+        turn = 3 - turn; // 黒白交互
+        drawBoard();
+      }
+    });
+
+    drawBoard();
+  </script>
+</body>
+</html>
