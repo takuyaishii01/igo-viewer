@@ -62,7 +62,32 @@
       }
     });
 
-    drawBoard();
+    drawBoard();canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.round((e.clientX - rect.left) / cell);
+  const y = Math.round((e.clientY - rect.top) / cell);
+
+  if (x < 1 || x > size || y < 1 || y > size || board[y][x]) return;
+
+  board[y][x] = turn;
+  drawBoard();
+  drawStones();
+  turn = turn === 1 ? 2 : 1;
+});
+
+function drawStones() {
+  for (let y = 1; y <= size; y++) {
+    for (let x = 1; x <= size; x++) {
+      if (board[y][x]) {
+        ctx.beginPath();
+        ctx.arc(x * cell, y * cell, cell * 0.4, 0, Math.PI * 2);
+        ctx.fillStyle = board[y][x] === 1 ? 'black' : 'white';
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+  }
+}
   </script>
 </body>
 </html>
