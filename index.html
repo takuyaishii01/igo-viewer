@@ -58,7 +58,23 @@
       if (x >= 0 && y >= 0 && x < size && y < size && board[y][x] === 0) {
         board[y][x] = turn;
         turn = 3 - turn; // 黒白交互
-        drawBoard();
+        drawBoard();canvas.addEventListener("click", function(e) {
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.round((e.clientX - rect.left) / cell);
+  const y = Math.round((e.clientY - rect.top) / cell);
+
+  if (board[y][x]) {
+    // すでに石がある場合 → 削除する
+    board[y][x] = 0;
+  } else {
+    // 石がない場合 → 現在の色で設置
+    board[y][x] = turn;
+    turn = turn === 1 ? 2 : 1;
+  }
+
+  drawBoard();
+  drawStones();
+});
       }
     });
 
