@@ -2,12 +2,12 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>囲碁アプリ（タップ補正＋全部入り）</title>
+  <title>囲碁アプリ v2（棋譜管理＋再生機能付き）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {
-      text-align: center;
       font-family: sans-serif;
+      text-align: center;
       margin: 0;
       background-color: #f4f4f4;
     }
@@ -19,159 +19,230 @@
       max-width: 95vw;
       height: auto;
     }
-    button {
+    button, input[type="text"] {
       margin: 5px;
       padding: 8px 14px;
       font-size: 16px;
     }
-    #recordList {
+    #recordList, #kifuList {
       max-width: 500px;
-      margin: 0 auto;
+      margin: 10px auto;
       text-align: left;
       font-size: 14px;
       padding: 0 1em;
     }
-    .dark canvas {
-      background-color: #333;
-    }
-    .dark body {
-      background-color: #111;
-      color: white;
-    }
+    .dark canvas { background-color: #333; }
+    .dark body { background-color: #111; color: white; }
   </style>
 </head>
 <body>
-  <h1>囲碁盤（自由打ち＋記録＋着手番号）</h1>
+  <h1>囲碁アプリ v2</h1>
   <canvas id="goban" width="600" height="600"></canvas>
   <div>
     <button onclick="undo()">↩ 一手戻す</button>
     <button onclick="resetBoard()">🔄 リセット</button>
-    <button onclick="downloadKifu()">💾 棋譜保存</button>
     <button onclick="switchFirst()">🔁 先手交代</button>
     <button onclick="toggleTheme()">🎨 テーマ切替</button>
+    <button onclick="autoPlay()">▶ 自動再生</button>
+    <button onclick="stopPlay()">⏹ 停止</button>
+  </div>
+  <div>
+    <input type="text" id="kifuName" placeholder="棋譜名">
+    <button onclick="saveKifu()">💾 保存</button>
+    <button onclick="downloadKifu()">📥 ダウンロード</button>
+    <input type="file" accept=".sgf" onchange="loadSGF(event)">
   </div>
   <p id="moveCount">手数: 0</p>
   <ul id="recordList"></ul>
+  <h3>📂 保存された棋譜</h3>
+  <ul id="kifuList"></ul><script>
+  const canvas = document.getElementById("goban");
+  const ctx = canvas.getContext("2d");
+  let size = 19;
+  let cell = canvas.width / (size + 1);
+  let board = Array.from({ length: size }, () => Array(size).fill(0));
+  let moveHistory = [];
+  let moveHistory_backup = null;
+  let turn = 1;
+  let theme = "light";
+  let intervalId = null;
 
-  <script>
-    const canvas = document.getElementById("goban");
-    const ctx = canvas.getContext("2d");
-    let size = 19;
-    let cell = canvas.width / (size + 1);
-    let board = Array.from({ length: size }, () => Array(size).fill(0));
-    let moveHistory = [];
-    let turn = 1; // 1:黒 2:白
-    let theme = "light";
+  const kanji = ["一","二","三","四","五","六","七","八","九","十","十一","十二","十三","十四","十五","十六","十七","十八","十九"];
+  const abc = "ABCDEFGHJKLMNOPQRST";
 
-    const kanji = ["一","二","三","四","五","六","七","八","九","十","十一","十二","十三","十四","十五","十六","十七","十八","十九"];
-    const abc = "ABCDEFGHJKLMNOPQRST";
-
-    function drawBoard() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // 座標ラベル
-      ctx.font = `${cell * 0.4}px sans-serif`;
-      ctx.fillStyle = theme === "light" ? "#000" : "#fff";
-      for (let i = 0; i < size; i++) {
-        ctx.fillText(abc[i], (i + 1) * cell - cell * 0.15, cell * 0.7);
-        ctx.fillText(kanji[i], cell * 0.1, (i + 1) * cell + cell * 0.15);
-      }
-
-      // 線
-      ctx.strokeStyle = "#000";
-      for (let i = 1; i <= size; i++) {
-        ctx.beginPath();
-        ctx.moveTo(cell, i * cell);
-        ctx.lineTo(size * cell, i * cell);
-        ctx.moveTo(i * cell, cell);
-        ctx.lineTo(i * cell, size * cell);
-        ctx.stroke();
-      }
-
-      // 石と番号
-      for (let i = 0; i < moveHistory.length; i++) {
-        const {x, y, color} = moveHistory[i];
-        ctx.beginPath();
-        ctx.arc((x + 1) * cell, (y + 1) * cell, cell * 0.4, 0, Math.PI * 2);
-        ctx.fillStyle = color === 1 ? "black" : "white";
-        ctx.fill();
-        ctx.stroke();
-        // 番号
-        ctx.fillStyle = color === 1 ? "white" : "black";
-        ctx.font = `${cell * 0.35}px sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(i + 1, (x + 1) * cell, (y + 1) * cell);
-      }
-
-      document.getElementById("moveCount").textContent = `手数: ${moveHistory.length}`;
+  function drawBoard() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = `${cell * 0.4}px sans-serif`;
+    ctx.fillStyle = theme === "light" ? "#000" : "#fff";
+    for (let i = 0; i < size; i++) {
+      ctx.fillText(abc[i], (i + 1) * cell - cell * 0.15, cell * 0.7);
+      ctx.fillText(kanji[i], cell * 0.1, (i + 1) * cell + cell * 0.15);
     }
-
-    canvas.addEventListener("click", e => {
-      const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-      const x = Math.floor((e.clientX - rect.left) * scaleX / cell - 0.5);
-      const y = Math.floor((e.clientY - rect.top) * scaleY / cell - 0.5);
-      if (x >= 0 && x < size && y >= 0 && y < size && board[y][x] === 0) {
-        board[y][x] = turn;
-        moveHistory.push({x, y, color: turn});
-        addRecord(turn, x, y);
-        turn = 3 - turn;
-        drawBoard();
-      }
-    });
-
-    function addRecord(color, x, y) {
-      const coord = `${x + 1}の${kanji[y]}`;
-      const li = document.createElement("li");
-      li.textContent = `${moveHistory.length}. ${color === 1 ? "黒" : "白"}が ${coord} に打ちました`;
-      document.getElementById("recordList").appendChild(li);
+    ctx.strokeStyle = "#000";
+    for (let i = 1; i <= size; i++) {
+      ctx.beginPath();
+      ctx.moveTo(cell, i * cell);
+      ctx.lineTo(size * cell, i * cell);
+      ctx.moveTo(i * cell, cell);
+      ctx.lineTo(i * cell, size * cell);
+      ctx.stroke();
     }
+    for (let i = 0; i < moveHistory.length; i++) {
+      const {x, y, color} = moveHistory[i];
+      ctx.beginPath();
+      ctx.arc((x + 1) * cell, (y + 1) * cell, cell * 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = color === 1 ? "black" : "white";
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = color === 1 ? "white" : "black";
+      ctx.font = `${cell * 0.35}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(i + 1, (x + 1) * cell, (y + 1) * cell);
+    }
+    document.getElementById("moveCount").textContent = `手数: ${moveHistory.length}`;
+  }
 
-    function undo() {
-      if (moveHistory.length === 0) return;
-      const last = moveHistory.pop();
-      board[last.y][last.x] = 0;
-      turn = last.color;
-      const list = document.getElementById("recordList");
-      list.removeChild(list.lastChild);
+  canvas.addEventListener("click", e => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = Math.floor((e.clientX - rect.left) * scaleX / cell - 0.5);
+    const y = Math.floor((e.clientY - rect.top) * scaleY / cell - 0.5);
+    if (x >= 0 && x < size && y >= 0 && y < size && board[y][x] === 0) {
+      board[y][x] = turn;
+      moveHistory.push({x, y, color: turn});
+      addRecord(turn, x, y);
+      turn = 3 - turn;
       drawBoard();
     }
+  });
 
-    function resetBoard() {
-      board = Array.from({ length: size }, () => Array(size).fill(0));
-      moveHistory = [];
-      turn = 1;
-      document.getElementById("recordList").innerHTML = "";
-      drawBoard();
-    }
+  function addRecord(color, x, y) {
+    const coord = `${x + 1}の${kanji[y]}`;
+    const li = document.createElement("li");
+    li.textContent = `${moveHistory.length}. ${color === 1 ? "黒" : "白"}が ${coord} に打ちました`;
+    document.getElementById("recordList").appendChild(li);
+  }
 
-    function switchFirst() {
-      resetBoard();
-      turn = 2; // 次は白から
-    }
-
-    function downloadKifu() {
-      let txt = "";
-      moveHistory.forEach((m, i) => {
-        txt += `${i + 1}. ${m.color === 1 ? "黒" : "白"}: ${m.x + 1}の${kanji[m.y]}\n`;
-      });
-      const blob = new Blob([txt], {type: "text/plain"});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "kifu.txt";
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-
-    function toggleTheme() {
-      theme = theme === "light" ? "dark" : "light";
-      document.body.classList.toggle("dark");
-      drawBoard();
-    }
-
+  function undo() {
+    if (moveHistory.length === 0) return;
+    const last = moveHistory.pop();
+    board[last.y][last.x] = 0;
+    turn = last.color;
+    const list = document.getElementById("recordList");
+    list.removeChild(list.lastChild);
     drawBoard();
-  </script>
+  }
+
+  function resetBoard() {
+    board = Array.from({ length: size }, () => Array(size).fill(0));
+    moveHistory = [];
+    turn = 1;
+    document.getElementById("recordList").innerHTML = "";
+    drawBoard();
+  }
+
+  function switchFirst() {
+    resetBoard();
+    turn = 2;
+  }
+
+  function downloadKifu() {
+    const name = document.getElementById("kifuName").value || "kifu";
+    let txt = "";
+    moveHistory.forEach((m, i) => {
+      txt += `${i + 1}. ${m.color === 1 ? "黒" : "白"}: ${m.x + 1}の${kanji[m.y]}\n`;
+    });
+    const blob = new Blob([txt], {type: "text/plain"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name}.txt`;
+    a.click();
+  }
+
+  function saveKifu() {
+    const name = document.getElementById("kifuName").value || `棋譜_${Date.now()}`;
+    localStorage.setItem("kifu_" + name, JSON.stringify(moveHistory));
+    loadKifuList();
+  }
+
+  function loadKifuList() {
+    const list = document.getElementById("kifuList");
+    list.innerHTML = "";
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith("kifu_")) {
+        const li = document.createElement("li");
+        const btn = document.createElement("button");
+        btn.textContent = key.replace("kifu_", "");
+        btn.onclick = () => {
+          moveHistory = JSON.parse(localStorage.getItem(key));
+          board = Array.from({ length: size }, () => Array(size).fill(0));
+          moveHistory.forEach(m => board[m.y][m.x] = m.color);
+          document.getElementById("recordList").innerHTML = "";
+          moveHistory.forEach((m, i) => addRecord(m.color, m.x, m.y));
+          drawBoard();
+        };
+        li.appendChild(btn);
+        list.appendChild(li);
+      }
+    }
+  }
+
+  function toggleTheme() {
+    theme = theme === "light" ? "dark" : "light";
+    document.body.classList.toggle("dark");
+    drawBoard();
+  }
+
+  function autoPlay() {
+    let i = 0;
+    resetBoard();
+    moveHistory_backup = [...moveHistory];
+    const kifu = [...moveHistory_backup];
+    intervalId = setInterval(() => {
+      if (i < kifu.length) {
+        const m = kifu[i];
+        board[m.y][m.x] = m.color;
+        moveHistory.push(m);
+        addRecord(m.color, m.x, m.y);
+        drawBoard();
+        i++;
+      } else {
+        clearInterval(intervalId);
+      }
+    }, 1000);
+  }
+
+  function stopPlay() {
+    clearInterval(intervalId);
+  }
+
+  function loadSGF(event) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const content = e.target.result;
+      const regex = /;([BW])\[([a-s]{2})\]/ig;
+      let match;
+      resetBoard();
+      while ((match = regex.exec(content)) !== null) {
+        const color = match[1] === "B" ? 1 : 2;
+        const x = "abcdefghjklmnopqrst".indexOf(match[2][0]);
+        const y = "abcdefghjklmnopqrst".indexOf(match[2][1]);
+        if (x >= 0 && y >= 0) {
+          board[y][x] = color;
+          moveHistory.push({x, y, color});
+          addRecord(color, x, y);
+        }
+      }
+      drawBoard();
+    };
+    reader.readAsText(event.target.files[0]);
+  }
+
+  loadKifuList();
+  drawBoard();
+</script>
 </body>
 </html>
