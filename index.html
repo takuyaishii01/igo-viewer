@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>囲碁アプリ v3（変化図ツリー付き）</title>
+  <title>囲碁アプリ v2（SGF保存＋メモ＋並び替え対応）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {
@@ -19,36 +19,73 @@
       max-width: 95vw;
       height: auto;
     }
-    #recordList, #sgfTreeContainer {
+    button, input[type="text"], textarea, select {
+      margin: 5px;
+      padding: 8px 14px;
+      font-size: 16px;
+    }
+    #recordList, #kifuList {
       max-width: 500px;
       margin: 10px auto;
       text-align: left;
       font-size: 14px;
       padding: 0 1em;
     }
-    button, input[type="text"], textarea, select {
-      margin: 5px;
-      padding: 8px 14px;
-      font-size: 16px;
-    }
     .dark canvas { background-color: #333; }
     .dark body { background-color: #111; color: white; }
   </style>
 </head>
 <body>
-  <h1>囲碁アプリ v3（変化図ツリー付き）</h1>
+  <h1>囲碁アプリ v2</h1>
+
+  <!-- 🎯 追加機能のUI -->
+  <div>
+    <button onclick="generateShareURL()">🔗 共有URL生成</button>
+    <input type="text" id="shareURL" readonly style="width: 90%;">
+    <br>
+    <label><input type="checkbox" id="readerMode"> 🔒 リーダーモード（編集不可）</label>
+    <label><input type="checkbox" id="editMode"> ✏️ 編集モード（石の削除）</label>
+  </div>
 
   <canvas id="goban" width="600" height="600"></canvas>
 
   <div>
+    <button onclick="undo()">↩ 一手戻す</button>
+    <button onclick="resetBoard()">🔄 リセット</button>
+    <button onclick="switchFirst()">🔁 先手交代</button>
+    <button onclick="toggleTheme()">🎨 テーマ切替</button>
+    <button onclick="autoPlay()">▶ 自動再生</button>
+    <button onclick="stopPlay()">⏹ 停止</button>
+  </div>
+
+  <div>
+    <input type="text" id="kifuName" placeholder="棋譜名">
+    <select id="kifuType">
+      <option value="taikyoku">対局</option>
+      <option value="joseki">定石</option>
+    </select>
+    <textarea id="kifuMemo" placeholder="メモを書く（任意）"></textarea><br>
+    <button onclick="saveKifu()">💾 保存</button>
+    <button onclick="downloadKifu()">📥 ダウンロード</button>
+    <button onclick="downloadSGF()">📤 SGFで保存</button>
     <input type="file" accept=".sgf" onchange="loadSGF(event)">
+  </div>
+
+  <div>
+    <span>カテゴリ:</span>
+    <button onclick="filterKifu('all')">全て</button>
+    <button onclick="filterKifu('taikyoku')">対局</button>
+    <button onclick="filterKifu('joseki')">定石</button>
+    <br>
+    <span>並び替え:</span>
+    <button onclick="setSort('name')">名前順</button>
+    <button onclick="setSort('newest')">新着順</button>
   </div>
 
   <p id="moveCount">手数: 0</p>
   <ul id="recordList"></ul>
-
-  <h3>📜 手順ツリー</h3>
-  <div id="sgfTreeContainer"></div>
+  <h3>📂 保存された棋譜</h3>
+  <ul id="kifuList"></ul>
 
   <script>
     const canvas = document.getElementById("goban");
@@ -57,15 +94,22 @@
     const cell = canvas.width / (size + 1);
     let board = Array.from({ length: size }, () => Array(size).fill(0));
     let moveHistory = [];
-    const abc = "abcdefghjklmnopqrst";
+    let moveHistory_backup = null;
+    let turn = 1;
+    let theme = "light";
+    let intervalId = null;
+    let currentSort = "newest";
+    let currentFilter = "all";
+
     const kanji = ["一","二","三","四","五","六","七","八","九","十","十一","十二","十三","十四","十五","十六","十七","十八","十九"];
+    const abc = "ABCDEFGHJKLMNOPQRST";
 
     function drawBoard() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.font = `${cell * 0.4}px sans-serif`;
-      ctx.fillStyle = "#000";
+      ctx.fillStyle = theme === "light" ? "#000" : "#fff";
       for (let i = 0; i < size; i++) {
-        ctx.fillText(abc[i].toUpperCase(), (i + 1) * cell - cell * 0.15, cell * 0.7);
+        ctx.fillText(abc[i], (i + 1) * cell - cell * 0.15, cell * 0.7);
         ctx.fillText(kanji[i], cell * 0.1, (i + 1) * cell + cell * 0.15);
       }
       ctx.strokeStyle = "#000";
@@ -93,6 +137,61 @@
       document.getElementById("moveCount").textContent = `手数: ${moveHistory.length}`;
     }
 
+    // 🎯 クリック処理（打ち手／編集／リーダーモード）
+    canvas.addEventListener("click", e => {
+      if (document.getElementById("readerMode").checked) return;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = Math.floor((e.clientX - rect.left) * scaleX / cell - 0.5);
+      const y = Math.floor((e.clientY - rect.top) * scaleY / cell - 0.5);
+      if (x < 0 || x >= size || y < 0 || y >= size) return;
+      const isEdit = document.getElementById("editMode").checked;
+
+      if (isEdit && board[y][x] !== 0) {
+        board[y][x] = 0;
+        moveHistory = moveHistory.filter(m => !(m.x === x && m.y === y));
+        document.getElementById("recordList").innerHTML = "";
+        moveHistory.forEach(m => addRecord(m.color, m.x, m.y));
+        drawBoard();
+        return;
+      }
+
+      if (!isEdit && board[y][x] === 0) {
+        board[y][x] = turn;
+        moveHistory.push({x, y, color: turn});
+        addRecord(turn, x, y);
+        turn = 3 - turn;
+        drawBoard();
+      }
+    });
+
+    // 🎯 URLパラメータで棋譜読み込み
+    window.addEventListener("DOMContentLoaded", () => {
+      const params = new URLSearchParams(location.search);
+      if (params.has("kifu")) {
+        try {
+          const decoded = decodeURIComponent(atob(params.get("kifu")));
+          const moves = JSON.parse(decoded);
+          moveHistory = moves;
+          board = Array.from({ length: size }, () => Array(size).fill(0));
+          moveHistory.forEach(m => board[m.y][m.x] = m.color);
+          document.getElementById("recordList").innerHTML = "";
+          moveHistory.forEach(m => addRecord(m.color, m.x, m.y));
+          drawBoard();
+        } catch (e) {
+          alert("棋譜の読み込みに失敗しました。URLが壊れている可能性があります。");
+        }
+      }
+    });
+
+    function generateShareURL() {
+      const data = JSON.stringify(moveHistory);
+      const encoded = btoa(encodeURIComponent(data));
+      const url = `${location.origin}${location.pathname}?kifu=${encoded}`;
+      document.getElementById("shareURL").value = url;
+    }
+
     function addRecord(color, x, y) {
       const coord = `${x + 1}の${kanji[y]}`;
       const li = document.createElement("li");
@@ -100,124 +199,181 @@
       document.getElementById("recordList").appendChild(li);
     }
 
+    function undo() {
+      if (moveHistory.length === 0) return;
+      const last = moveHistory.pop();
+      board[last.y][last.x] = 0;
+      turn = last.color;
+      document.getElementById("recordList").removeChild(document.getElementById("recordList").lastChild);
+      drawBoard();
+    }
+
     function resetBoard() {
       board = Array.from({ length: size }, () => Array(size).fill(0));
       moveHistory = [];
+      turn = 1;
       document.getElementById("recordList").innerHTML = "";
       drawBoard();
     }
 
-    function parseSGFToTree(sgf) {
-      let index = 0;
-      function parseNode() {
-        const node = { move: null, children: [] };
-        const moveMatch = sgf.slice(index).match(/;([BW])\[([a-s]{2})\]/i);
-        if (moveMatch) {
-          const [full, color, coords] = moveMatch;
-          const x = abc.indexOf(coords[0]);
-          const y = abc.indexOf(coords[1]);
-          node.move = { color: color === "B" ? 1 : 2, x, y };
-          index += sgf.slice(index).indexOf(full) + full.length;
-        }
-        return node;
-      }
+    function switchFirst() {
+      resetBoard();
+      turn = 2;
+    }
 
-      function parseSequence() {
-        const children = [];
-        while (index < sgf.length) {
-          const char = sgf[index];
-          if (char === ";") {
-            const node = parseNode();
-            if (node.move) children.push(node);
-          } else if (char === "(") {
-            index++;
-            const branch = parseSequence();
-            if (children.length) {
-              children[children.length - 1].children.push(branch);
-            }
-          } else if (char === ")") {
-            index++;
-            break;
-          } else {
-            index++;
+    function downloadKifu() {
+      const name = document.getElementById("kifuName").value || "kifu";
+      let txt = "";
+      moveHistory.forEach((m, i) => {
+        txt += `${i + 1}. ${m.color === 1 ? "黒" : "白"}: ${m.x + 1}の${kanji[m.y]}\n`;
+      });
+      const blob = new Blob([txt], {type: "text/plain"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${name}.txt`;
+      a.click();
+    }
+
+    function downloadSGF() {
+      const name = document.getElementById("kifuName").value || "kifu";
+      let sgf = "(;GM[1]FF[4]SZ[19]CA[UTF-8]";
+      moveHistory.forEach(m => {
+        const color = m.color === 1 ? "B" : "W";
+        const x = "abcdefghjklmnopqrst"[m.x];
+        const y = "abcdefghjklmnopqrst"[m.y];
+        sgf += `;${color}[${x}${y}]`;
+      });
+      sgf += ")";
+      const blob = new Blob([sgf], {type: "text/plain"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${name}.sgf`;
+      a.click();
+    }
+
+    function saveKifu() {
+      const name = document.getElementById("kifuName").value || `棋譜_${Date.now()}`;
+      const type = document.getElementById("kifuType").value;
+      const memo = document.getElementById("kifuMemo").value;
+      const data = {
+        moves: moveHistory,
+        type: type,
+        memo: memo,
+        created: Date.now()
+      };
+      localStorage.setItem("kifu_" + name, JSON.stringify(data));
+      loadKifuList(currentSort, currentFilter);
+    }
+
+    function loadKifuList(sort = "newest", filter = "all") {
+      const list = document.getElementById("kifuList");
+      list.innerHTML = "";
+      let kifuArray = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith("kifu_")) {
+          const kifu = JSON.parse(localStorage.getItem(key));
+          kifu.key = key;
+          if (filter === "all" || kifu.type === filter) {
+            kifuArray.push(kifu);
           }
         }
-        return children.length === 1 ? children[0] : { move: null, children };
       }
-
-      return parseSequence();
+      if (sort === "name") {
+        kifuArray.sort((a, b) => a.key.localeCompare(b.key));
+      } else {
+        kifuArray.sort((a, b) => (b.created || 0) - (a.created || 0)).reverse();
+      }
+      for (const kifu of kifuArray) {
+        const li = document.createElement("li");
+        const btn = document.createElement("button");
+        btn.textContent = kifu.key.replace("kifu_", "");
+        btn.title = kifu.memo || "";
+        btn.onclick = () => {
+          moveHistory = kifu.moves;
+          board = Array.from({ length: size }, () => Array(size).fill(0));
+          moveHistory.forEach(m => board[m.y][m.x] = m.color);
+          document.getElementById("recordList").innerHTML = "";
+          moveHistory.forEach((m, i) => addRecord(m.color, m.x, m.y));
+          drawBoard();
+        };
+        const del = document.createElement("button");
+        del.textContent = "🗑️";
+        del.style.marginLeft = "5px";
+        del.onclick = () => {
+          if (confirm("この棋譜を削除しますか？")) {
+            localStorage.removeItem(kifu.key);
+            loadKifuList(currentSort, currentFilter);
+          }
+        };
+        li.appendChild(btn);
+        li.appendChild(del);
+        list.appendChild(li);
+      }
     }
 
-    function renderSGFTree(root, container) {
-      container.innerHTML = "";
-      function renderNode(node, depth = 0) {
-        const div = document.createElement("div");
-        div.style.marginLeft = `${depth * 16}px`;
-
-        if (node.move) {
-          const label = document.createElement("span");
-          const turnLabel = node.move.color === 1 ? "●" : "○";
-          label.textContent = `${turnLabel} (${node.move.x + 1}, ${node.move.y + 1})`;
-          label.style.cursor = "pointer";
-          label.onclick = () => replayToNode(node);
-          div.appendChild(label);
-        }
-
-        if (node.children.length > 0) {
-          const toggle = document.createElement("span");
-          toggle.textContent = " ▶";
-          toggle.style.cursor = "pointer";
-          toggle.style.marginLeft = "6px";
-          let expanded = false;
-
-          const childContainer = document.createElement("div");
-          childContainer.style.display = "none";
-
-          toggle.onclick = () => {
-            expanded = !expanded;
-            childContainer.style.display = expanded ? "block" : "none";
-            toggle.textContent = expanded ? " ▼" : " ▶";
-          };
-
-          div.appendChild(toggle);
-          node.children.forEach(child => {
-            childContainer.appendChild(renderNode(child, depth + 1));
-          });
-          div.appendChild(childContainer);
-        }
-
-        return div;
-      }
-      container.appendChild(renderNode(root));
-    }
-
-    function replayToNode(targetNode) {
-      resetBoard();
-      function walk(node) {
-        if (node.move) {
-          board[node.move.y][node.move.x] = node.move.color;
-          moveHistory.push({...node.move});
-          addRecord(node.move.color, node.move.x, node.move.y);
-        }
-        if (node.children.length > 0) {
-          walk(node.children[0]);
-        }
-      }
-      walk(targetNode);
+    function toggleTheme() {
+      theme = theme === "light" ? "dark" : "light";
+      document.body.classList.toggle("dark");
       drawBoard();
+    }
+
+    function autoPlay() {
+      let i = 0;
+      resetBoard();
+      moveHistory_backup = [...moveHistory];
+      const kifu = [...moveHistory_backup];
+      intervalId = setInterval(() => {
+        if (i < kifu.length) {
+          const m = kifu[i];
+          board[m.y][m.x] = m.color;
+          moveHistory.push(m);
+          addRecord(m.color, m.x, m.y);
+          drawBoard();
+          i++;
+        } else {
+          clearInterval(intervalId);
+        }
+      }, 1000);
+    }
+
+    function stopPlay() {
+      clearInterval(intervalId);
     }
 
     function loadSGF(event) {
       const reader = new FileReader();
       reader.onload = function(e) {
         const content = e.target.result;
-        const tree = parseSGFToTree(content);
-        renderSGFTree(tree, document.getElementById("sgfTreeContainer"));
-        replayToNode(tree);
+        const regex = /;([BW])\[([a-s]{2})\]/ig;
+        let match;
+        resetBoard();
+        while ((match = regex.exec(content)) !== null) {
+          const color = match[1] === "B" ? 1 : 2;
+          const x = "abcdefghjklmnopqrst".indexOf(match[2][0]);
+          const y = "abcdefghjklmnopqrst".indexOf(match[2][1]);
+          if (x >= 0 && y >= 0) {
+            board[y][x] = color;
+            moveHistory.push({x, y, color});
+            addRecord(color, x, y);
+          }
+        }
+        drawBoard();
       };
       reader.readAsText(event.target.files[0]);
     }
 
+    function filterKifu(type) {
+      currentFilter = type;
+      loadKifuList(currentSort, currentFilter);
+    }
+
+    function setSort(sort) {
+      currentSort = sort;
+      loadKifuList(currentSort, currentFilter);
+    }
+
+    loadKifuList();
     drawBoard();
   </script>
 </body>
