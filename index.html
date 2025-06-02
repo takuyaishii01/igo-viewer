@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>囲碁ビューワー（再生機能付き）</title>
+  <title>囲碁ビューワー（手順表示・漢数字付き）</title>
   <style>
     body { text-align: center; font-family: sans-serif; }
     canvas {
@@ -18,13 +18,14 @@
   </style>
 </head>
 <body>
-  <h1>19×19 囲碁盤（再生機能付き）</h1>
+  <h1>囲碁盤（再生機能＋手順表示）</h1>
   <canvas id="goban" width="600" height="600"></canvas>
   <div>
     <button onclick="prevMove()">◀ 前へ</button>
     <button onclick="nextMove()">次へ ▶</button>
   </div>
   <p id="moveCount">手数: 0 / 4</p>
+  <p id="moveText">現在の手：まだありません</p>
 
   <script>
     const canvas = document.getElementById('goban');
@@ -33,18 +34,28 @@
     const cell = canvas.width / (size + 1);
     const board = Array.from({ length: size }, () => Array(size).fill(0));
 
+    // 仮の棋譜データ（x: 横, y: 縦） 0-indexed
     const moves = [
-      { x: 3, y: 3, color: 1 },    // 黒：星
-      { x: 15, y: 15, color: 2 },  // 白：星
-      { x: 16, y: 3, color: 1 },
-      { x: 3, y: 15, color: 2 }
+      { x: 3, y: 3, color: 1 },    // 黒：4の四
+      { x: 15, y: 15, color: 2 },  // 白：16の十六
+      { x: 0, y: 0, color: 1 },    // 黒：1の一
+      { x: 18, y: 18, color: 2 }   // 白：19の十九
     ];
 
     let currentMove = 0;
 
+    function xyToCoordinate(x, y) {
+      const kanjiList = ["一","二","三","四","五","六","七","八","九","十",
+                         "十一","十二","十三","十四","十五","十六","十七","十八","十九"];
+      const vertical = kanjiList[y];    // 上から y 列目（縦方向）
+      const horizontal = x + 1;         // 左から x 列目（横方向）
+      return `${horizontal}の${vertical}`;
+    }
+
     function drawBoard() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // 碁盤の線
+
+      // 線を引く
       for (let i = 1; i <= size; i++) {
         ctx.beginPath();
         ctx.moveTo(cell, i * cell);
@@ -53,7 +64,8 @@
         ctx.lineTo(i * cell, size * cell);
         ctx.stroke();
       }
-      // 石の描画
+
+      // 石を描く
       for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
           if (board[y][x] !== 0) {
@@ -65,7 +77,17 @@
           }
         }
       }
+
+      // 手順表示更新
       document.getElementById("moveCount").textContent = `手数: ${currentMove} / ${moves.length}`;
+      if (currentMove === 0) {
+        document.getElementById("moveText").textContent = "現在の手：まだありません";
+      } else {
+        const last = moves[currentMove - 1];
+        const coord = xyToCoordinate(last.x, last.y);
+        const color = last.color === 1 ? "黒" : "白";
+        document.getElementById("moveText").textContent = `現在の手：${color}が ${coord} に打ちました`;
+      }
     }
 
     function nextMove() {
