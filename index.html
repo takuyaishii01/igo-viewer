@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>囲碁ビューワー（記録＋リセット機能付き）</title>
+  <title>囲碁ビューワー（クリック記録モード）</title>
   <style>
     body { text-align: center; font-family: sans-serif; }
     canvas {
@@ -25,15 +25,12 @@
   </style>
 </head>
 <body>
-  <h1>囲碁盤（再生＋記録＋リセット）</h1>
+  <h1>囲碁盤（クリックで打ち、記録）</h1>
   <canvas id="goban" width="600" height="600"></canvas>
   <div>
-    <button onclick="prevMove()">◀ 前へ</button>
-    <button onclick="nextMove()">次へ ▶</button>
     <button onclick="resetBoard()">🔄 リセット</button>
   </div>
-  <p id="moveCount">手数: 0 / 4</p>
-  <p id="moveText">現在の手：まだありません</p>
+  <p id="moveCount">手数: 0</p>
   <ul id="recordList"></ul>
 
   <script>
@@ -42,15 +39,8 @@
     const size = 19;
     const cell = canvas.width / (size + 1);
     let board = Array.from({ length: size }, () => Array(size).fill(0));
-
-    const moves = [
-      { x: 3, y: 3, color: 1 },
-      { x: 15, y: 15, color: 2 },
-      { x: 0, y: 0, color: 1 },
-      { x: 18, y: 18, color: 2 }
-    ];
-
-    let currentMove = 0;
+    let turn = 1; // 1=黒, 2=白
+    let moveHistory = [];
 
     function xyToCoordinate(x, y) {
       const kanjiList = ["一","二","三","四","五","六","七","八","九","十",
@@ -62,7 +52,6 @@
 
     function drawBoard() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
       for (let i = 1; i <= size; i++) {
         ctx.beginPath();
         ctx.moveTo(cell, i * cell);
@@ -71,7 +60,6 @@
         ctx.lineTo(i * cell, size * cell);
         ctx.stroke();
       }
-
       for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
           if (board[y][x] !== 0) {
@@ -83,52 +71,34 @@
           }
         }
       }
-
-      document.getElementById("moveCount").textContent = `手数: ${currentMove} / ${moves.length}`;
-      if (currentMove === 0) {
-        document.getElementById("moveText").textContent = "現在の手：まだありません";
-      } else {
-        const last = moves[currentMove - 1];
-        const coord = xyToCoordinate(last.x, last.y);
-        const color = last.color === 1 ? "黒" : "白";
-        document.getElementById("moveText").textContent = `現在の手：${color}が ${coord} に打ちました`;
-      }
+      document.getElementById("moveCount").textContent = `手数: ${moveHistory.length}`;
     }
 
-    function nextMove() {
-      if (currentMove < moves.length) {
-        const move = moves[currentMove];
-        board[move.y][move.x] = move.color;
-        currentMove++;
+    canvas.addEventListener("click", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.round((e.clientX - rect.left) / cell - 1);
+      const y = Math.round((e.clientY - rect.top) / cell - 1);
 
-        const coord = xyToCoordinate(move.x, move.y);
-        const color = move.color === 1 ? "黒" : "白";
+      if (x >= 0 && y >= 0 && x < size && y < size && board[y][x] === 0) {
+        board[y][x] = turn;
+        moveHistory.push({ x, y, color: turn });
+
+        const coord = xyToCoordinate(x, y);
+        const color = turn === 1 ? "黒" : "白";
         const li = document.createElement("li");
-        li.textContent = `${currentMove}. ${color}が ${coord} に打ちました`;
+        li.textContent = `${moveHistory.length}. ${color}が ${coord} に打ちました`;
         document.getElementById("recordList").appendChild(li);
 
+        turn = 3 - turn; // 黒白交代
         drawBoard();
       }
-    }
-
-    function prevMove() {
-      if (currentMove > 0) {
-        currentMove--;
-        const move = moves[currentMove];
-        board[move.y][move.x] = 0;
-
-        const list = document.getElementById("recordList");
-        list.removeChild(list.lastChild);
-
-        drawBoard();
-      }
-    }
+    });
 
     function resetBoard() {
-      currentMove = 0;
       board = Array.from({ length: size }, () => Array(size).fill(0));
+      moveHistory = [];
+      turn = 1;
       document.getElementById("recordList").innerHTML = '';
-      document.getElementById("moveText").textContent = "現在の手：まだありません";
       drawBoard();
     }
 
