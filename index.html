@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>囲碁アプリ v2（棋譜管理＋再生機能付き）</title>
+  <title>囲碁アプリ v2（SGF保存＋メモ＋並び替え対応）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {
@@ -19,7 +19,7 @@
       max-width: 95vw;
       height: auto;
     }
-    button, input[type="text"] {
+    button, input[type="text"], textarea, select {
       margin: 5px;
       padding: 8px 14px;
       font-size: 16px;
@@ -48,201 +48,282 @@
   </div>
   <div>
     <input type="text" id="kifuName" placeholder="棋譜名">
+    <select id="kifuType">
+      <option value="taikyoku">対局</option>
+      <option value="joseki">定石</option>
+    </select>
+    <textarea id="kifuMemo" placeholder="メモを書く（任意）"></textarea><br>
     <button onclick="saveKifu()">💾 保存</button>
     <button onclick="downloadKifu()">📥 ダウンロード</button>
+    <button onclick="downloadSGF()">📤 SGFで保存</button>
     <input type="file" accept=".sgf" onchange="loadSGF(event)">
+  </div>
+  <div>
+    <span>カテゴリ:</span>
+    <button onclick="filterKifu('all')">全て</button>
+    <button onclick="filterKifu('taikyoku')">対局</button>
+    <button onclick="filterKifu('joseki')">定石</button>
+    <br>
+    <span>並び替え:</span>
+    <button onclick="setSort('name')">名前順</button>
+    <button onclick="setSort('newest')">新着順</button>
   </div>
   <p id="moveCount">手数: 0</p>
   <ul id="recordList"></ul>
   <h3>📂 保存された棋譜</h3>
-  <ul id="kifuList"></ul><script>
-  const canvas = document.getElementById("goban");
-  const ctx = canvas.getContext("2d");
-  let size = 19;
-  let cell = canvas.width / (size + 1);
-  let board = Array.from({ length: size }, () => Array(size).fill(0));
-  let moveHistory = [];
-  let moveHistory_backup = null;
-  let turn = 1;
-  let theme = "light";
-  let intervalId = null;
+  <ul id="kifuList"></ul>
 
-  const kanji = ["一","二","三","四","五","六","七","八","九","十","十一","十二","十三","十四","十五","十六","十七","十八","十九"];
-  const abc = "ABCDEFGHJKLMNOPQRST";
+  <script>
+    const canvas = document.getElementById("goban");
+    const ctx = canvas.getContext("2d");
+    const size = 19;
+    const cell = canvas.width / (size + 1);
+    let board = Array.from({ length: size }, () => Array(size).fill(0));
+    let moveHistory = [];
+    let moveHistory_backup = null;
+    let turn = 1;
+    let theme = "light";
+    let intervalId = null;
+    let currentSort = "newest";
+    let currentFilter = "all";
 
-  function drawBoard() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.font = `${cell * 0.4}px sans-serif`;
-    ctx.fillStyle = theme === "light" ? "#000" : "#fff";
-    for (let i = 0; i < size; i++) {
-      ctx.fillText(abc[i], (i + 1) * cell - cell * 0.15, cell * 0.7);
-      ctx.fillText(kanji[i], cell * 0.1, (i + 1) * cell + cell * 0.15);
-    }
-    ctx.strokeStyle = "#000";
-    for (let i = 1; i <= size; i++) {
-      ctx.beginPath();
-      ctx.moveTo(cell, i * cell);
-      ctx.lineTo(size * cell, i * cell);
-      ctx.moveTo(i * cell, cell);
-      ctx.lineTo(i * cell, size * cell);
-      ctx.stroke();
-    }
-    for (let i = 0; i < moveHistory.length; i++) {
-      const {x, y, color} = moveHistory[i];
-      ctx.beginPath();
-      ctx.arc((x + 1) * cell, (y + 1) * cell, cell * 0.4, 0, Math.PI * 2);
-      ctx.fillStyle = color === 1 ? "black" : "white";
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = color === 1 ? "white" : "black";
-      ctx.font = `${cell * 0.35}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(i + 1, (x + 1) * cell, (y + 1) * cell);
-    }
-    document.getElementById("moveCount").textContent = `手数: ${moveHistory.length}`;
-  }
+    const kanji = ["一","二","三","四","五","六","七","八","九","十","十一","十二","十三","十四","十五","十六","十七","十八","十九"];
+    const abc = "ABCDEFGHJKLMNOPQRST";
 
-  canvas.addEventListener("click", e => {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const x = Math.floor((e.clientX - rect.left) * scaleX / cell - 0.5);
-    const y = Math.floor((e.clientY - rect.top) * scaleY / cell - 0.5);
-    if (x >= 0 && x < size && y >= 0 && y < size && board[y][x] === 0) {
-      board[y][x] = turn;
-      moveHistory.push({x, y, color: turn});
-      addRecord(turn, x, y);
-      turn = 3 - turn;
+    function drawBoard() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = `${cell * 0.4}px sans-serif`;
+      ctx.fillStyle = theme === "light" ? "#000" : "#fff";
+      for (let i = 0; i < size; i++) {
+        ctx.fillText(abc[i], (i + 1) * cell - cell * 0.15, cell * 0.7);
+        ctx.fillText(kanji[i], cell * 0.1, (i + 1) * cell + cell * 0.15);
+      }
+      ctx.strokeStyle = "#000";
+      for (let i = 1; i <= size; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cell, i * cell);
+        ctx.lineTo(size * cell, i * cell);
+        ctx.moveTo(i * cell, cell);
+        ctx.lineTo(i * cell, size * cell);
+        ctx.stroke();
+      }
+      for (let i = 0; i < moveHistory.length; i++) {
+        const {x, y, color} = moveHistory[i];
+        ctx.beginPath();
+        ctx.arc((x + 1) * cell, (y + 1) * cell, cell * 0.4, 0, Math.PI * 2);
+        ctx.fillStyle = color === 1 ? "black" : "white";
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = color === 1 ? "white" : "black";
+        ctx.font = `${cell * 0.35}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(i + 1, (x + 1) * cell, (y + 1) * cell);
+      }
+      document.getElementById("moveCount").textContent = `手数: ${moveHistory.length}`;
+    }
+
+    canvas.addEventListener("click", e => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = Math.floor((e.clientX - rect.left) * scaleX / cell - 0.5);
+      const y = Math.floor((e.clientY - rect.top) * scaleY / cell - 0.5);
+      if (x >= 0 && x < size && y >= 0 && y < size && board[y][x] === 0) {
+        board[y][x] = turn;
+        moveHistory.push({x, y, color: turn});
+        addRecord(turn, x, y);
+        turn = 3 - turn;
+        drawBoard();
+      }
+    });
+
+    function addRecord(color, x, y) {
+      const coord = `${x + 1}の${kanji[y]}`;
+      const li = document.createElement("li");
+      li.textContent = `${moveHistory.length}. ${color === 1 ? "黒" : "白"}が ${coord} に打ちました`;
+      document.getElementById("recordList").appendChild(li);
+    }
+
+    function undo() {
+      if (moveHistory.length === 0) return;
+      const last = moveHistory.pop();
+      board[last.y][last.x] = 0;
+      turn = last.color;
+      document.getElementById("recordList").removeChild(document.getElementById("recordList").lastChild);
       drawBoard();
     }
-  });
 
-  function addRecord(color, x, y) {
-    const coord = `${x + 1}の${kanji[y]}`;
-    const li = document.createElement("li");
-    li.textContent = `${moveHistory.length}. ${color === 1 ? "黒" : "白"}が ${coord} に打ちました`;
-    document.getElementById("recordList").appendChild(li);
-  }
+    function resetBoard() {
+      board = Array.from({ length: size }, () => Array(size).fill(0));
+      moveHistory = [];
+      turn = 1;
+      document.getElementById("recordList").innerHTML = "";
+      drawBoard();
+    }
 
-  function undo() {
-    if (moveHistory.length === 0) return;
-    const last = moveHistory.pop();
-    board[last.y][last.x] = 0;
-    turn = last.color;
-    const list = document.getElementById("recordList");
-    list.removeChild(list.lastChild);
-    drawBoard();
-  }
+    function switchFirst() {
+      resetBoard();
+      turn = 2;
+    }
 
-  function resetBoard() {
-    board = Array.from({ length: size }, () => Array(size).fill(0));
-    moveHistory = [];
-    turn = 1;
-    document.getElementById("recordList").innerHTML = "";
-    drawBoard();
-  }
+    function downloadKifu() {
+      const name = document.getElementById("kifuName").value || "kifu";
+      let txt = "";
+      moveHistory.forEach((m, i) => {
+        txt += `${i + 1}. ${m.color === 1 ? "黒" : "白"}: ${m.x + 1}の${kanji[m.y]}\n`;
+      });
+      const blob = new Blob([txt], {type: "text/plain"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${name}.txt`;
+      a.click();
+    }
 
-  function switchFirst() {
-    resetBoard();
-    turn = 2;
-  }
+    function downloadSGF() {
+      const name = document.getElementById("kifuName").value || "kifu";
+      let sgf = "(;GM[1]FF[4]SZ[19]CA[UTF-8]";
+      moveHistory.forEach(m => {
+        const color = m.color === 1 ? "B" : "W";
+        const x = "abcdefghjklmnopqrst"[m.x];
+        const y = "abcdefghjklmnopqrst"[m.y];
+        sgf += `;${color}[${x}${y}]`;
+      });
+      sgf += ")";
+      const blob = new Blob([sgf], {type: "text/plain"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${name}.sgf`;
+      a.click();
+    }
 
-  function downloadKifu() {
-    const name = document.getElementById("kifuName").value || "kifu";
-    let txt = "";
-    moveHistory.forEach((m, i) => {
-      txt += `${i + 1}. ${m.color === 1 ? "黒" : "白"}: ${m.x + 1}の${kanji[m.y]}\n`;
-    });
-    const blob = new Blob([txt], {type: "text/plain"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${name}.txt`;
-    a.click();
-  }
+    function saveKifu() {
+      const name = document.getElementById("kifuName").value || `棋譜_${Date.now()}`;
+      const type = document.getElementById("kifuType").value;
+      const memo = document.getElementById("kifuMemo").value;
+      const data = {
+        moves: moveHistory,
+        type: type,
+        memo: memo,
+        created: Date.now()
+      };
+      localStorage.setItem("kifu_" + name, JSON.stringify(data));
+      loadKifuList(currentSort, currentFilter);
+    }
 
-  function saveKifu() {
-    const name = document.getElementById("kifuName").value || `棋譜_${Date.now()}`;
-    localStorage.setItem("kifu_" + name, JSON.stringify(moveHistory));
-    loadKifuList();
-  }
+    function loadKifuList(sort = "newest", filter = "all") {
+      const list = document.getElementById("kifuList");
+      list.innerHTML = "";
 
-  function loadKifuList() {
-    const list = document.getElementById("kifuList");
-    list.innerHTML = "";
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key.startsWith("kifu_")) {
+      let kifuArray = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith("kifu_")) {
+          const kifu = JSON.parse(localStorage.getItem(key));
+          kifu.key = key;
+          if (filter === "all" || kifu.type === filter) {
+            kifuArray.push(kifu);
+          }
+        }
+      }
+
+      if (sort === "name") {
+        kifuArray.sort((a, b) => a.key.localeCompare(b.key));
+      } else {
+        kifuArray.sort((a, b) => (b.created || 0) - (a.created || 0)).reverse();
+      }
+
+      for (const kifu of kifuArray) {
         const li = document.createElement("li");
         const btn = document.createElement("button");
-        btn.textContent = key.replace("kifu_", "");
+        btn.textContent = kifu.key.replace("kifu_", "");
+        btn.title = kifu.memo || "";
         btn.onclick = () => {
-          moveHistory = JSON.parse(localStorage.getItem(key));
+          moveHistory = kifu.moves;
           board = Array.from({ length: size }, () => Array(size).fill(0));
           moveHistory.forEach(m => board[m.y][m.x] = m.color);
           document.getElementById("recordList").innerHTML = "";
           moveHistory.forEach((m, i) => addRecord(m.color, m.x, m.y));
           drawBoard();
         };
+        const del = document.createElement("button");
+        del.textContent = "🗑️";
+        del.style.marginLeft = "5px";
+        del.onclick = () => {
+          if (confirm("この棋譜を削除しますか？")) {
+            localStorage.removeItem(kifu.key);
+            loadKifuList(currentSort, currentFilter);
+          }
+        };
         li.appendChild(btn);
+        li.appendChild(del);
         list.appendChild(li);
       }
     }
-  }
 
-  function toggleTheme() {
-    theme = theme === "light" ? "dark" : "light";
-    document.body.classList.toggle("dark");
-    drawBoard();
-  }
-
-  function autoPlay() {
-    let i = 0;
-    resetBoard();
-    moveHistory_backup = [...moveHistory];
-    const kifu = [...moveHistory_backup];
-    intervalId = setInterval(() => {
-      if (i < kifu.length) {
-        const m = kifu[i];
-        board[m.y][m.x] = m.color;
-        moveHistory.push(m);
-        addRecord(m.color, m.x, m.y);
-        drawBoard();
-        i++;
-      } else {
-        clearInterval(intervalId);
-      }
-    }, 1000);
-  }
-
-  function stopPlay() {
-    clearInterval(intervalId);
-  }
-
-  function loadSGF(event) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      const content = e.target.result;
-      const regex = /;([BW])\[([a-s]{2})\]/ig;
-      let match;
-      resetBoard();
-      while ((match = regex.exec(content)) !== null) {
-        const color = match[1] === "B" ? 1 : 2;
-        const x = "abcdefghjklmnopqrst".indexOf(match[2][0]);
-        const y = "abcdefghjklmnopqrst".indexOf(match[2][1]);
-        if (x >= 0 && y >= 0) {
-          board[y][x] = color;
-          moveHistory.push({x, y, color});
-          addRecord(color, x, y);
-        }
-      }
+    function toggleTheme() {
+      theme = theme === "light" ? "dark" : "light";
+      document.body.classList.toggle("dark");
       drawBoard();
-    };
-    reader.readAsText(event.target.files[0]);
-  }
+    }
 
-  loadKifuList();
-  drawBoard();
-</script>
+    function autoPlay() {
+      let i = 0;
+      resetBoard();
+      moveHistory_backup = [...moveHistory];
+      const kifu = [...moveHistory_backup];
+      intervalId = setInterval(() => {
+        if (i < kifu.length) {
+          const m = kifu[i];
+          board[m.y][m.x] = m.color;
+          moveHistory.push(m);
+          addRecord(m.color, m.x, m.y);
+          drawBoard();
+          i++;
+        } else {
+          clearInterval(intervalId);
+        }
+      }, 1000);
+    }
+
+    function stopPlay() {
+      clearInterval(intervalId);
+    }
+
+    function loadSGF(event) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const content = e.target.result;
+        const regex = /;([BW])\\[([a-s]{2})\\]/ig;
+        let match;
+        resetBoard();
+        while ((match = regex.exec(content)) !== null) {
+          const color = match[1] === "B" ? 1 : 2;
+          const x = "abcdefghjklmnopqrst".indexOf(match[2][0]);
+          const y = "abcdefghjklmnopqrst".indexOf(match[2][1]);
+          if (x >= 0 && y >= 0) {
+            board[y][x] = color;
+            moveHistory.push({x, y, color});
+            addRecord(color, x, y);
+          }
+        }
+        drawBoard();
+      };
+      reader.readAsText(event.target.files[0]);
+    }
+
+    function filterKifu(type) {
+      currentFilter = type;
+      loadKifuList(currentSort, currentFilter);
+    }
+
+    function setSort(sort) {
+      currentSort = sort;
+      loadKifuList(currentSort, currentFilter);
+    }
+
+    loadKifuList();
+    drawBoard();
+  </script>
 </body>
 </html>
