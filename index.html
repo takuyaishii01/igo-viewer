@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>囲碁ビューワー</title>
+  <title>囲碁ビューワー（再生機能付き）</title>
   <style>
     body { text-align: center; font-family: sans-serif; }
     canvas {
@@ -10,11 +10,21 @@
       margin-top: 20px;
       background-color: #f4d9ae;
     }
+    button {
+      margin: 10px;
+      padding: 5px 10px;
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
-  <h1>19×19 囲碁盤</h1>
+  <h1>19×19 囲碁盤（再生機能付き）</h1>
   <canvas id="goban" width="600" height="600"></canvas>
+  <div>
+    <button onclick="prevMove()">◀ 前へ</button>
+    <button onclick="nextMove()">次へ ▶</button>
+  </div>
+  <p id="moveCount">手数: 0 / 4</p>
 
   <script>
     const canvas = document.getElementById('goban');
@@ -22,12 +32,19 @@
     const size = 19;
     const cell = canvas.width / (size + 1);
     const board = Array.from({ length: size }, () => Array(size).fill(0));
-    let turn = 1; // 1: 黒, 2: 白
+
+    const moves = [
+      { x: 3, y: 3, color: 1 },    // 黒：星
+      { x: 15, y: 15, color: 2 },  // 白：星
+      { x: 16, y: 3, color: 1 },
+      { x: 3, y: 15, color: 2 }
+    ];
+
+    let currentMove = 0;
 
     function drawBoard() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // 線を描く
+      // 碁盤の線
       for (let i = 1; i <= size; i++) {
         ctx.beginPath();
         ctx.moveTo(cell, i * cell);
@@ -36,8 +53,7 @@
         ctx.lineTo(i * cell, size * cell);
         ctx.stroke();
       }
-
-      // 石を描く
+      // 石の描画
       for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
           if (board[y][x] !== 0) {
@@ -49,23 +65,26 @@
           }
         }
       }
+      document.getElementById("moveCount").textContent = `手数: ${currentMove} / ${moves.length}`;
     }
 
-    canvas.addEventListener('click', (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const x = Math.round((e.clientX - rect.left) / cell - 1);
-      const y = Math.round((e.clientY - rect.top) / cell - 1);
-
-      if (x >= 0 && y >= 0 && x < size && y < size) {
-        if (board[y][x] === 0) {
-          board[y][x] = turn;
-          turn = 3 - turn;
-        } else {
-          board[y][x] = 0; // 石を消す
-        }
+    function nextMove() {
+      if (currentMove < moves.length) {
+        const move = moves[currentMove];
+        board[move.y][move.x] = move.color;
+        currentMove++;
         drawBoard();
       }
-    });
+    }
+
+    function prevMove() {
+      if (currentMove > 0) {
+        currentMove--;
+        const move = moves[currentMove];
+        board[move.y][move.x] = 0;
+        drawBoard();
+      }
+    }
 
     drawBoard();
   </script>
