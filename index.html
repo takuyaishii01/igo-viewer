@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>囲碁アプリ（全部入りVer.1）</title>
+  <title>囲碁アプリ（タップ補正＋全部入り）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {
@@ -108,8 +108,10 @@
 
     canvas.addEventListener("click", e => {
       const rect = canvas.getBoundingClientRect();
-      const x = Math.floor((e.clientX - rect.left) / cell - 0.5);
-      const y = Math.floor((e.clientY - rect.top) / cell - 0.5);
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = Math.floor((e.clientX - rect.left) * scaleX / cell - 0.5);
+      const y = Math.floor((e.clientY - rect.top) * scaleY / cell - 0.5);
       if (x >= 0 && x < size && y >= 0 && y < size && board[y][x] === 0) {
         board[y][x] = turn;
         moveHistory.push({x, y, color: turn});
