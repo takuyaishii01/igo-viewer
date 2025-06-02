@@ -37,7 +37,18 @@
 </head>
 <body>
   <h1>囲碁アプリ v2</h1>
+
+  <!-- 🎯 追加機能のUI -->
+  <div>
+    <button onclick="generateShareURL()">🔗 共有URL生成</button>
+    <input type="text" id="shareURL" readonly style="width: 90%;">
+    <br>
+    <label><input type="checkbox" id="readerMode"> 🔒 リーダーモード（編集不可）</label>
+    <label><input type="checkbox" id="editMode"> ✏️ 編集モード（石の削除）</label>
+  </div>
+
   <canvas id="goban" width="600" height="600"></canvas>
+
   <div>
     <button onclick="undo()">↩ 一手戻す</button>
     <button onclick="resetBoard()">🔄 リセット</button>
@@ -46,6 +57,7 @@
     <button onclick="autoPlay()">▶ 自動再生</button>
     <button onclick="stopPlay()">⏹ 停止</button>
   </div>
+
   <div>
     <input type="text" id="kifuName" placeholder="棋譜名">
     <select id="kifuType">
@@ -58,6 +70,7 @@
     <button onclick="downloadSGF()">📤 SGFで保存</button>
     <input type="file" accept=".sgf" onchange="loadSGF(event)">
   </div>
+
   <div>
     <span>カテゴリ:</span>
     <button onclick="filterKifu('all')">全て</button>
@@ -68,6 +81,7 @@
     <button onclick="setSort('name')">名前順</button>
     <button onclick="setSort('newest')">新着順</button>
   </div>
+
   <p id="moveCount">手数: 0</p>
   <ul id="recordList"></ul>
   <h3>📂 保存された棋譜</h3>
@@ -123,13 +137,27 @@
       document.getElementById("moveCount").textContent = `手数: ${moveHistory.length}`;
     }
 
+    // 🎯 クリック処理（打ち手／編集／リーダーモード）
     canvas.addEventListener("click", e => {
+      if (document.getElementById("readerMode").checked) return;
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
       const x = Math.floor((e.clientX - rect.left) * scaleX / cell - 0.5);
       const y = Math.floor((e.clientY - rect.top) * scaleY / cell - 0.5);
-      if (x >= 0 && x < size && y >= 0 && y < size && board[y][x] === 0) {
+      if (x < 0 || x >= size || y < 0 || y >= size) return;
+      const isEdit = document.getElementById("editMode").checked;
+
+      if (isEdit && board[y][x] !== 0) {
+        board[y][x] = 0;
+        moveHistory = moveHistory.filter(m => !(m.x === x && m.y === y));
+        document.getElementById("recordList").innerHTML = "";
+        moveHistory.forEach(m => addRecord(m.color, m.x, m.y));
+        drawBoard();
+        return;
+      }
+
+      if (!isEdit && board[y][x] === 0) {
         board[y][x] = turn;
         moveHistory.push({x, y, color: turn});
         addRecord(turn, x, y);
@@ -137,6 +165,32 @@
         drawBoard();
       }
     });
+
+    // 🎯 URLパラメータで棋譜読み込み
+    window.addEventListener("DOMContentLoaded", () => {
+      const params = new URLSearchParams(location.search);
+      if (params.has("kifu")) {
+        try {
+          const decoded = decodeURIComponent(atob(params.get("kifu")));
+          const moves = JSON.parse(decoded);
+          moveHistory = moves;
+          board = Array.from({ length: size }, () => Array(size).fill(0));
+          moveHistory.forEach(m => board[m.y][m.x] = m.color);
+          document.getElementById("recordList").innerHTML = "";
+          moveHistory.forEach(m => addRecord(m.color, m.x, m.y));
+          drawBoard();
+        } catch (e) {
+          alert("棋譜の読み込みに失敗しました。URLが壊れている可能性があります。");
+        }
+      }
+    });
+
+    function generateShareURL() {
+      const data = JSON.stringify(moveHistory);
+      const encoded = btoa(encodeURIComponent(data));
+      const url = `${location.origin}${location.pathname}?kifu=${encoded}`;
+      document.getElementById("shareURL").value = url;
+    }
 
     function addRecord(color, x, y) {
       const coord = `${x + 1}の${kanji[y]}`;
@@ -214,7 +268,6 @@
     function loadKifuList(sort = "newest", filter = "all") {
       const list = document.getElementById("kifuList");
       list.innerHTML = "";
-
       let kifuArray = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -226,13 +279,11 @@
           }
         }
       }
-
       if (sort === "name") {
         kifuArray.sort((a, b) => a.key.localeCompare(b.key));
       } else {
         kifuArray.sort((a, b) => (b.created || 0) - (a.created || 0)).reverse();
       }
-
       for (const kifu of kifuArray) {
         const li = document.createElement("li");
         const btn = document.createElement("button");
@@ -294,7 +345,7 @@
       const reader = new FileReader();
       reader.onload = function(e) {
         const content = e.target.result;
-        const regex = /;([BW])\\[([a-s]{2})\\]/ig;
+        const regex = /;([BW])\[([a-s]{2})\]/ig;
         let match;
         resetBoard();
         while ((match = regex.exec(content)) !== null) {
