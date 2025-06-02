@@ -24,9 +24,10 @@
     const board = Array.from({ length: size }, () => Array(size).fill(0));
     let turn = 1; // 1: 黒, 2: 白
 
-    // 碁盤を描画
     function drawBoard() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 線を描く
       for (let i = 1; i <= size; i++) {
         ctx.beginPath();
         ctx.moveTo(cell, i * cell);
@@ -36,12 +37,12 @@
         ctx.stroke();
       }
 
-      // 石の描画
+      // 石を描く
       for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
           if (board[y][x] !== 0) {
             ctx.beginPath();
-            ctx.arc((x + 1) * cell, (y + 1) * cell, cell / 2.5, 0, Math.PI * 2);
+            ctx.arc((x + 1) * cell, (y + 1) * cell, cell * 0.4, 0, Math.PI * 2);
             ctx.fillStyle = board[y][x] === 1 ? 'black' : 'white';
             ctx.fill();
             ctx.stroke();
@@ -50,60 +51,23 @@
       }
     }
 
-    // クリックで石を置く
     canvas.addEventListener('click', (e) => {
       const rect = canvas.getBoundingClientRect();
       const x = Math.round((e.clientX - rect.left) / cell - 1);
       const y = Math.round((e.clientY - rect.top) / cell - 1);
-      if (x >= 0 && y >= 0 && x < size && y < size && board[y][x] === 0) {
-        board[y][x] = turn;
-        turn = 3 - turn; // 黒白交互
-        drawBoard();canvas.addEventListener("click", function(e) {
-  const rect = canvas.getBoundingClientRect();
-  const x = Math.round((e.clientX - rect.left) / cell);
-  const y = Math.round((e.clientY - rect.top) / cell);
 
-  if (board[y][x]) {
-    // すでに石がある場合 → 削除する
-    board[y][x] = 0;
-  } else {
-    // 石がない場合 → 現在の色で設置
-    board[y][x] = turn;
-    turn = turn === 1 ? 2 : 1;
-  }
-
-  drawBoard();
-  drawStones();
-});
+      if (x >= 0 && y >= 0 && x < size && y < size) {
+        if (board[y][x] === 0) {
+          board[y][x] = turn;
+          turn = 3 - turn;
+        } else {
+          board[y][x] = 0; // 石を消す
+        }
+        drawBoard();
       }
     });
 
-    drawBoard();canvas.addEventListener('click', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const x = Math.round((e.clientX - rect.left) / cell);
-  const y = Math.round((e.clientY - rect.top) / cell);
-
-  if (x < 1 || x > size || y < 1 || y > size || board[y][x]) return;
-
-  board[y][x] = turn;
-  drawBoard();
-  drawStones();
-  turn = turn === 1 ? 2 : 1;
-});
-
-function drawStones() {
-  for (let y = 1; y <= size; y++) {
-    for (let x = 1; x <= size; x++) {
-      if (board[y][x]) {
-        ctx.beginPath();
-        ctx.arc(x * cell, y * cell, cell * 0.4, 0, Math.PI * 2);
-        ctx.fillStyle = board[y][x] === 1 ? 'black' : 'white';
-        ctx.fill();
-        ctx.stroke();
-      }
-    }
-  }
-}
+    drawBoard();
   </script>
 </body>
 </html>
